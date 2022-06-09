@@ -210,6 +210,7 @@ for epoch in range(num_epochs):
     correct = 0
     num_samples = 0
     model.train()
+    model_fc.train()
     for i, (dataset1, dataset2) in enumerate(my_dataloader):
         # origin shape: [N, 1, 28, 28]
         # resized: [N, 300, 2048][N,300,128]
@@ -224,7 +225,7 @@ for epoch in range(num_epochs):
         for k in range(data1.size(0)):
             images_o,outputs_fc_s = model_fc(data1[k])
             
-            loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
+            loss_fc += criterion_fc(outputs_fc_s, labels[k].reshape(1,1).expand(sequence_length, 1))
             with torch.no_grad():
                 X0 = torch.ones(sequence_length,1)
                 audio_i=torch.cat((X0,data2[k]),1)
@@ -267,6 +268,7 @@ for epoch in range(num_epochs):
     # In test phase, we don't need to compute gradients (for memory efficiency)
     num_samples_val = 0
     model.eval()
+    model_fc.eval()
     with torch.no_grad():
         correct_val = 0
         for i, (dataset1, dataset2) in enumerate(my_dataloader_val):
@@ -282,7 +284,7 @@ for epoch in range(num_epochs):
             for k in range(data1.size(0)):
                 images_o,outputs_fc_s = model_fc(data1[k])
             
-                loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
+                # loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
                 with torch.no_grad():
                     X0 = torch.ones(sequence_length,1)
                     audio_i=torch.cat((X0,data2[k]),1)
@@ -325,7 +327,7 @@ with torch.no_grad():
             for k in range(data1.size(0)):
                 images_o,outputs_fc_s = model_fc(data1[k])
             
-                loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
+                # loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
                 with torch.no_grad():
                     X0 = torch.ones(sequence_length,1)
                     audio_i=torch.cat((X0,data2[k]),1)

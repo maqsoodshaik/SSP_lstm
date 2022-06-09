@@ -9,6 +9,7 @@ import os
 import csv
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import train_test_split
+import fusion
 #set random seeds
 seed=42
 torch.manual_seed(seed)
@@ -24,7 +25,7 @@ num_epochs = 2
 batch_size = 2
 learning_rate = 0.0001
 loss_hyp = 0.3
-input_size = 129*129
+input_size = 256
 sequence_length = 300
 hidden_size = 2000
 num_layers = 3
@@ -172,7 +173,7 @@ class RNN(nn.Module):
         # self.fc_enc = SUBNET()
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
         self.fc = nn.Linear(hidden_size, num_classes)
-
+        
     def forward(self, x):
         # Set initial hidden states (and cell states for LSTM)
         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
@@ -198,11 +199,13 @@ class RNN(nn.Module):
         return torch.sigmoid(out)
 
 model = RNN(input_size, hidden_size, num_layers, num_classes).to(device)
+model_trans = fusion.TransformerEncoder(num_layers = 4,input_dim =128,num_heads =4, dim_feedforward = 256)
 model_fc = SUBNET(num_classes).to(device)
 # Loss and optimizer
 criterion = nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 criterion_fc = nn.BCELoss()
+criterion_trans = nn.BCELoss()
 # optimizer_fc = torch.optim.Adam(model_fc.parameters(), lr=learning_rate)
 # Train the model
 best_val_acc = 0
@@ -210,6 +213,8 @@ for epoch in range(num_epochs):
     correct = 0
     num_samples = 0
     model.train()
+    model_fc.train()
+    model_trans.train()
     for i, (dataset1, dataset2) in enumerate(my_dataloader):
         # origin shape: [N, 1, 28, 28]
         # resized: [N, 300, 2048][N,300,128]
@@ -221,20 +226,20 @@ for epoch in range(num_epochs):
         images_i = torch.as_tensor([])
         images = torch.as_tensor([])
         loss_fc = 0
+        loss_trans = 0
         for k in range(data1.size(0)):
             images_o,outputs_fc_s = model_fc(data1[k])
-            
-            loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
-            with torch.no_grad():
-                X0 = torch.ones(sequence_length,1)
-                audio_i=torch.cat((X0,data2[k]),1)
-                images_i=torch.cat((X0,images_o),1)
-                audio_i = audio_i.unsqueeze(2)
-                print(f'audio:{audio_i.shape}')
-                images_i = images_i.unsqueeze(1)
-                print(f'video:{images_i.shape}')   
-                images = torch.cat((images,torch.bmm(audio_i,images_i)))
-            
+            loss_fc += criterion_fc(outputs_fc_s, labels[k].reshape(1,1).expand(sequence_length, 1))
+            audio_i=data2[k]
+            audio_i = audio_i.unsqueeze(1)
+            images_i=images_o 
+            images_i = images_i.unsqueeze(1)
+            aggreg = torch.cat((audio_i,images_i),1)
+            out,out_s = model_trans(aggreg)
+            out = out.reshape(sequence_length,input_size)
+            out_s = out_s.reshape(sequence_length,2)
+            loss_trans += criterion_fc(out_s, labels[k].reshape(1,1).expand(sequence_length, 2))
+            images = torch.cat((images,out))
 
         
         images = images.reshape(-1, sequence_length, input_size).to(device)
@@ -247,7 +252,7 @@ for epoch in range(num_epochs):
         # print(labels.shape)
         # outputs = outputs.squeeze()
         loss = criterion(outputs, labels.unsqueeze(1))
-        loss +=loss_hyp*loss_fc
+        loss +=loss_hyp*(loss_fc+loss_trans)
         # Backward and optimize
         optimizer.zero_grad()
         loss.backward()
@@ -282,16 +287,17 @@ for epoch in range(num_epochs):
             for k in range(data1.size(0)):
                 images_o,outputs_fc_s = model_fc(data1[k])
             
-                loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
-                with torch.no_grad():
-                    X0 = torch.ones(sequence_length,1)
-                    audio_i=torch.cat((X0,data2[k]),1)
-                    images_i=torch.cat((X0,images_o),1)
-                    audio_i = audio_i.unsqueeze(2)
-                    print(f'audio:{audio_i.shape}')
-                    images_i = images_i.unsqueeze(1)
-                    print(f'video:{images_i.shape}')   
-                    images = torch.cat((images,torch.bmm(audio_i,images_i)))
+                # loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
+                audio_i=data2[k]
+                audio_i = audio_i.unsqueeze(1)
+                images_i=images_o 
+                images_i = images_i.unsqueeze(1)
+                aggreg = torch.cat((audio_i,images_i),1)
+                out,out_s = model_trans(aggreg)
+                out = out.reshape(sequence_length,input_size)
+                out_s = out_s.reshape(sequence_length,2)
+                # loss_trans += criterion_fc(out_s, labels[k].reshape(1,1).expand(sequence_length, 2))
+                images = torch.cat((images,out))
 
             images = images.reshape(-1, sequence_length, input_size).to(device)
             labels = labels.to(device)
@@ -325,16 +331,16 @@ with torch.no_grad():
             for k in range(data1.size(0)):
                 images_o,outputs_fc_s = model_fc(data1[k])
             
-                loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
-                with torch.no_grad():
-                    X0 = torch.ones(sequence_length,1)
-                    audio_i=torch.cat((X0,data2[k]),1)
-                    images_i=torch.cat((X0,images_o),1)
-                    audio_i = audio_i.unsqueeze(2)
-                    print(f'audio:{audio_i.shape}')
-                    images_i = images_i.unsqueeze(1)
-                    print(f'video:{images_i.shape}')   
-                    images = torch.cat((images,torch.bmm(audio_i,images_i)))
+                audio_i=data2[k]
+                audio_i = audio_i.unsqueeze(1)
+                images_i=images_o 
+                images_i = images_i.unsqueeze(1)
+                aggreg = torch.cat((audio_i,images_i),1)
+                out,out_s = model_trans(aggreg)
+                out = out.reshape(sequence_length,input_size)
+                out_s = out_s.reshape(sequence_length,2)
+                # loss_trans += criterion_fc(out_s, labels[k].reshape(1,1).expand(sequence_length, 2))
+                images = torch.cat((images,out))
 
             images = images.reshape(-1, sequence_length, input_size).to(device)
             labels = labels.to(device)

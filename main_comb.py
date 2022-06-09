@@ -23,8 +23,8 @@ num_classes = 1
 num_epochs = 2
 batch_size = 2
 learning_rate = 0.0001
-
-input_size = 128
+loss_hyp = 0.3
+input_size = 129*129
 sequence_length = 300
 hidden_size = 2000
 num_layers = 3
@@ -71,42 +71,6 @@ labels_test = np.array([np.array(fname[1], dtype=np.float16) for fname in rows_t
 os.chdir(org_path)
 tensor_x_video = torch.Tensor(combined_data_video) # transform to torch tensor
 tensor_x_audio = torch.Tensor(combined_data_audio) # transform to torch tensor
-# tensor_x_video = tensor_x_video.squeeze()
-# tensor_x_audio = tensor_x_audio.squeeze()
-                         
-# tensor_x = torch.tensor([])
-
-# for i in range(int(tensor_x_video.size(0)/10)):
-#     audio = torch.cat((tensor_x_audio[i],torch.tensor([1.0])))
-#     audio = audio.unsqueeze(0)
-#     for j in range(10):
-#         video = torch.cat((tensor_x_video[i*10+j],torch.tensor([1.0])))
-        
-#         video = video.unsqueeze(1)
-#         tensor_x[i*10+j,:,:] = torch.matmul(video,audio)
-
-
-###fusion with bigger size
-# X0 = torch.ones(tensor_x_video.size(0),sequence_length,1)
-# print(f'tensor_x_audio:{tensor_x_audio.shape}')
-# print(f'X0:{X0.shape}')
-# # tensor_x_audio = torch.hstack((tensor_x_audio,X0))
-# tensor_x_audio=torch.cat((X0,tensor_x_audio),2)
-# tensor_x_video=torch.cat((X0,tensor_x_video),2)
-# for i in range(int(tensor_x_video.size(0))):
-#     # audio = torch.cat((tensor_x_audio[i],torch.tensor([1.0])))
-#     # video = torch.cat((tensor_x_video[i],torch.tensor([1.0])))
-#     audio = tensor_x_audio[i].unsqueeze(2)
-#     print(f'audio:{audio.shape}')
-#     video = tensor_x_video[i].unsqueeze(1)
-#     print(f'video:{video.shape}')
-#     a = torch.bmm(audio,video)    
-#     tensor_x = torch.cat((tensor_x,torch.bmm(audio,video)))
-
-# tensor_x = tensor_x.reshape(batch_size,sequence_length,-1)
-# print(tensor_x.shape)  
-# 
-# tensor_x= tensor_x.unsqueeze(0)
 
 
 
@@ -114,50 +78,14 @@ tensor_x_audio = torch.Tensor(combined_data_audio) # transform to torch tensor
 
 tensor_x_test_video = torch.Tensor(combined_data_test_video) # transform to torch tensor
 tensor_x_test_audio = torch.Tensor(combined_data_test_audio) # transform to torch tensor
-tensor_y_test = torch.Tensor(labels_test.astype(np.float))
-# tensor_x_test = torch.tensor([])
-# for i in range(int(tensor_x_video.size(0)/10)):
-#     audio = torch.cat((tensor_x_audio[i],torch.tensor([1.0])))
-#     audio = audio.unsqueeze(0)
-#     for j in range(10):
-#         video = torch.cat((tensor_x_video[i*10+j],torch.tensor([1.0])))
-        
-#         video = video.unsqueeze(1)
-#         tensor_x[i*10+j,:,:] = torch.matmul(video,audio)
+tensor_y_test = torch.Tensor(labels_test.astype(np.float64))
 
-##fusion test with big size
-# X0 = torch.ones(tensor_x_test_video.size(0),sequence_length,1)
-# print(f'tensor_x_test_audio:{tensor_x_test_audio.shape}')
-# print(f'X0:{X0.shape}')
-# # tensor_x_audio = torch.hstack((tensor_x_audio,X0))
-# tensor_x_test_audio=torch.cat((X0,tensor_x_test_audio),2)
-# tensor_x_test_video=torch.cat((X0,tensor_x_test_video),2)
-# for i in range(int(tensor_x_test_video.size(0))):
-#     # audio = torch.cat((tensor_x_audio[i],torch.tensor([1.0])))
-#     # video = torch.cat((tensor_x_video[i],torch.tensor([1.0])))
-#     audio = tensor_x_test_audio[i].unsqueeze(2)
-#     print(f'audio:{audio.shape}')
-#     video = tensor_x_test_video[i].unsqueeze(1)
-#     print(f'video:{video.shape}')
-#     a = torch.bmm(audio,video)    
-#     tensor_x_test = torch.cat((tensor_x_test,torch.bmm(audio,video)))
 
-# tensor_x_test = tensor_x_test.reshape(sequence_length,-1)
-# print(tensor_x_test.shape)  
-# print(f'tensor_aft:{tensor_x_test[1]}')
-# tensor_x_test= tensor_x_test.unsqueeze(0)
 
 my_dataset_video_test = TensorDataset(tensor_x_test_video,tensor_y_test)
 my_dataset_audio_test = TensorDataset(tensor_x_test_audio,tensor_y_test)
 
-# my_dataset = TensorDataset(tensor_x,tensor_y) # create your datset
-
-# my_dataset_test = TensorDataset(tensor_x_test,tensor_y_test)
-
-# dataset_train, dataset_validate = train_test_split(
-#         my_dataset, test_size=0.5, random_state=84 #0.02
-#     )
-tensor_y = torch.Tensor(labels.astype(np.float))
+tensor_y = torch.Tensor(labels.astype(np.float64))
 my_dataset_video = TensorDataset(tensor_x_video,tensor_y)
 my_dataset_audio = TensorDataset(tensor_x_audio,tensor_y)
 dataset_train_video, dataset_validate_video = train_test_split(
@@ -198,15 +126,7 @@ my_dataloader_test = torch.utils.data.DataLoader(
              batch_size=batch_size)
 #---------------------
 
-# my_dataloader = DataLoader(dataset_train,batch_size=batch_size) # create your dataloader
-# my_dataloader_val = DataLoader(dataset_validate,batch_size=batch_size) 
-# my_dataloader_test = DataLoader(my_dataset_test,batch_size=batch_size) 
 
-
-
-# for i, (images, labels) in enumerate(my_dataloader):
-#   print(images.shape)
-#   print(labels)
 
 
 class SUBNET(nn.Module):
@@ -298,20 +218,23 @@ for epoch in range(num_epochs):
         data2 = dataset2[0].to(device)
         label2 = dataset2[1].to(device)
          # Forward pass
+        images_i = torch.as_tensor([])
         images = torch.as_tensor([])
         loss_fc = 0
         for k in range(data1.size(0)):
             images_o,outputs_fc_s = model_fc(data1[k])
-            images = torch.cat((images,images_o))
+            
             loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
-            # Backward and optimize
-            # optimizer_fc.zero_grad()
-            # loss_fc.backward()
-            # optimizer_fc.step()
-        # print(f'outputs.shape:{outputs.shape}')
-        # print(labels.shape)
-        # outputs = outputs.squeeze()
-        
+            with torch.no_grad():
+                X0 = torch.ones(sequence_length,1)
+                audio_i=torch.cat((X0,data2[k]),1)
+                images_i=torch.cat((X0,images_o),1)
+                audio_i = audio_i.unsqueeze(2)
+                print(f'audio:{audio_i.shape}')
+                images_i = images_i.unsqueeze(1)
+                print(f'video:{images_i.shape}')   
+                images = torch.cat((images,torch.bmm(audio_i,images_i)))
+            
 
         
         images = images.reshape(-1, sequence_length, input_size).to(device)
@@ -324,7 +247,7 @@ for epoch in range(num_epochs):
         # print(labels.shape)
         # outputs = outputs.squeeze()
         loss = criterion(outputs, labels.unsqueeze(1))
-        loss +=loss_fc
+        loss +=loss_hyp*loss_fc
         # Backward and optimize
         optimizer.zero_grad()
         loss.backward()
@@ -334,13 +257,7 @@ for epoch in range(num_epochs):
         # print(f'labels.shape:{labels.shape}')
         # print(f'correct_pre:{correct}')
         correct += (predicted.squeeze()== labels).sum().item()
-        # print(f'predicted:{predicted}')
-        # print(f'correct:{correct}')
-        # print(f'labels.size:{labels.size(0)}')
-        # if (i+1) % 1 == 0:
-        #     print (f'Epoch [{epoch+1}/{num_epochs}], Step [{i+1}/{n_total_steps}], Loss: {loss.item():.4f}')
-        # print(f'correct:{correct}')
-    # print(f'tensor_y.size(0):{tensor_y.size(0)}')
+       
     print('[%d/%d] loss: %.3f, accuracy: %.3f' %
           (i , epoch, loss.item(), 100 * correct /num_samples))
     writer.add_scalars('Loss',{'train':loss.item()},epoch)
@@ -363,9 +280,18 @@ for epoch in range(num_epochs):
             images = torch.as_tensor([])
             loss_fc = 0
             for k in range(data1.size(0)):
-                images_o,_ = model_fc(data1[k])
-                images = torch.cat((images,images_o))
-                # loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
+                images_o,outputs_fc_s = model_fc(data1[k])
+            
+                loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
+                with torch.no_grad():
+                    X0 = torch.ones(sequence_length,1)
+                    audio_i=torch.cat((X0,data2[k]),1)
+                    images_i=torch.cat((X0,images_o),1)
+                    audio_i = audio_i.unsqueeze(2)
+                    print(f'audio:{audio_i.shape}')
+                    images_i = images_i.unsqueeze(1)
+                    print(f'video:{images_i.shape}')   
+                    images = torch.cat((images,torch.bmm(audio_i,images_i)))
 
             images = images.reshape(-1, sequence_length, input_size).to(device)
             labels = labels.to(device)
@@ -397,9 +323,18 @@ with torch.no_grad():
             images = torch.as_tensor([])
             loss_fc = 0
             for k in range(data1.size(0)):
-                images_o,_ = model_fc(data1[k])
-                images = torch.cat((images,images_o))
-                # loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
+                images_o,outputs_fc_s = model_fc(data1[k])
+            
+                loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
+                with torch.no_grad():
+                    X0 = torch.ones(sequence_length,1)
+                    audio_i=torch.cat((X0,data2[k]),1)
+                    images_i=torch.cat((X0,images_o),1)
+                    audio_i = audio_i.unsqueeze(2)
+                    print(f'audio:{audio_i.shape}')
+                    images_i = images_i.unsqueeze(1)
+                    print(f'video:{images_i.shape}')   
+                    images = torch.cat((images,torch.bmm(audio_i,images_i)))
 
             images = images.reshape(-1, sequence_length, input_size).to(device)
             labels = labels.to(device)

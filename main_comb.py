@@ -1,0 +1,319 @@
+#!/usr/bin/env python3
+import torch
+import torch.nn as nn
+import torchvision
+import torchvision.transforms as transforms
+import numpy as np
+from torch.utils.data import TensorDataset, DataLoader
+import os
+import csv
+from torch.utils.tensorboard import SummaryWriter
+from sklearn.model_selection import train_test_split
+#set random seeds
+seed=42
+torch.manual_seed(seed)
+writer = SummaryWriter()
+
+# Device configuration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Hyper-parameters
+# input_size = 784 # 28x28
+num_classes = 1
+num_epochs = 20
+batch_size = 2
+learning_rate = 0.0001
+
+input_size = 2049*129
+sequence_length = 300
+hidden_size = 2000
+num_layers = 3
+
+
+# test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
+#                                           batch_size=batch_size,
+#                                           shuffle=False)
+org_path = os.getcwd()
+#read csv
+rows = []
+rows_test = []
+with open("bc_detection_train.csv", 'r') as file:
+    csvreader = csv.reader(file)
+    header = next(csvreader)
+    for row in csvreader:
+        rows.append(row)
+with open("bc_detection_val.csv", 'r') as file:
+    csvreader = csv.reader(file)
+    header = next(csvreader)
+    for row in csvreader:
+        rows_test.append(row)
+print(header)
+print(rows_test[:][0])
+#reading input data
+path = os.getcwd() + '/' + 'resnet50'
+dir_list = os.listdir(path)
+os.chdir(path)
+
+
+
+print(os.getcwd())
+# combined_data = np.array([np.load(fname) for fname in dir_list])
+combined_data_video = np.array([np.load(fname[0]+'_video.npy') for fname in rows])
+print(os.getcwd())
+combined_data_audio = np.array([np.load(fname[0]+'_audio.npy') for fname in rows])
+labels = np.array([np.array(fname[1], dtype=np.float16) for fname in rows])
+
+
+
+combined_data_test_video = np.array([np.load(fname[0]+'_video.npy') for fname in rows_test])
+combined_data_test_audio = np.array([np.load(fname[0]+'_audio.npy') for fname in rows_test])
+labels_test = np.array([np.array(fname[1], dtype=np.float16) for fname in rows_test])
+os.chdir(org_path)
+tensor_x_video = torch.Tensor(combined_data_video) # transform to torch tensor
+tensor_x_audio = torch.Tensor(combined_data_audio) # transform to torch tensor
+# tensor_x_video = tensor_x_video.squeeze()
+# tensor_x_audio = tensor_x_audio.squeeze()
+                         
+tensor_x = torch.tensor([])
+print(f'tensor_bef_vid:{tensor_x_video.shape}')
+print(f'tensor_bef_aud:{tensor_x_audio.shape}')
+# for i in range(int(tensor_x_video.size(0)/10)):
+#     audio = torch.cat((tensor_x_audio[i],torch.tensor([1.0])))
+#     audio = audio.unsqueeze(0)
+#     for j in range(10):
+#         video = torch.cat((tensor_x_video[i*10+j],torch.tensor([1.0])))
+        
+#         video = video.unsqueeze(1)
+#         tensor_x[i*10+j,:,:] = torch.matmul(video,audio)
+###fusion
+X0 = torch.ones(tensor_x_video.size(0),sequence_length,1)
+print(f'tensor_x_audio:{tensor_x_audio.shape}')
+print(f'X0:{X0.shape}')
+# tensor_x_audio = torch.hstack((tensor_x_audio,X0))
+tensor_x_audio=torch.cat((X0,tensor_x_audio),2)
+tensor_x_video=torch.cat((X0,tensor_x_video),2)
+for i in range(int(tensor_x_video.size(0))):
+    # audio = torch.cat((tensor_x_audio[i],torch.tensor([1.0])))
+    # video = torch.cat((tensor_x_video[i],torch.tensor([1.0])))
+    audio = tensor_x_audio[i].unsqueeze(2)
+    print(f'audio:{audio.shape}')
+    video = tensor_x_video[i].unsqueeze(1)
+    print(f'video:{video.shape}')
+    a = torch.bmm(audio,video)    
+    tensor_x = torch.cat((tensor_x,torch.bmm(audio,video)))
+
+tensor_x = tensor_x.reshape(batch_size,sequence_length,-1)
+print(tensor_x.shape)  
+tensor_y = torch.Tensor(labels.astype(np.float))
+# tensor_x= tensor_x.unsqueeze(0)
+
+
+tensor_x_test_video = torch.Tensor(combined_data_test_video) # transform to torch tensor
+tensor_x_test_audio = torch.Tensor(combined_data_test_audio) # transform to torch tensor
+tensor_y_test = torch.Tensor(labels_test.astype(np.float))
+tensor_x_test = torch.tensor([])
+print(f'tensor_bef_vid:{tensor_x_test_video.shape}')
+print(f'tensor_bef_aud:{tensor_x_test_audio.shape}')
+# for i in range(int(tensor_x_video.size(0)/10)):
+#     audio = torch.cat((tensor_x_audio[i],torch.tensor([1.0])))
+#     audio = audio.unsqueeze(0)
+#     for j in range(10):
+#         video = torch.cat((tensor_x_video[i*10+j],torch.tensor([1.0])))
+        
+#         video = video.unsqueeze(1)
+#         tensor_x[i*10+j,:,:] = torch.matmul(video,audio)
+X0 = torch.ones(tensor_x_test_video.size(0),sequence_length,1)
+print(f'tensor_x_test_audio:{tensor_x_test_audio.shape}')
+print(f'X0:{X0.shape}')
+# tensor_x_audio = torch.hstack((tensor_x_audio,X0))
+tensor_x_test_audio=torch.cat((X0,tensor_x_test_audio),2)
+tensor_x_test_video=torch.cat((X0,tensor_x_test_video),2)
+for i in range(int(tensor_x_test_video.size(0))):
+    # audio = torch.cat((tensor_x_audio[i],torch.tensor([1.0])))
+    # video = torch.cat((tensor_x_video[i],torch.tensor([1.0])))
+    audio = tensor_x_test_audio[i].unsqueeze(2)
+    print(f'audio:{audio.shape}')
+    video = tensor_x_test_video[i].unsqueeze(1)
+    print(f'video:{video.shape}')
+    a = torch.bmm(audio,video)    
+    tensor_x_test = torch.cat((tensor_x_test,torch.bmm(audio,video)))
+
+tensor_x_test = tensor_x_test.reshape(sequence_length,-1)
+print(tensor_x_test.shape)  
+print(f'tensor_aft:{tensor_x_test[1]}')
+tensor_x_test= tensor_x_test.unsqueeze(0)
+
+
+
+my_dataset = TensorDataset(tensor_x,tensor_y) # create your datset
+
+my_dataset_test = TensorDataset(tensor_x_test,tensor_y_test)
+
+dataset_train, dataset_validate = train_test_split(
+        my_dataset, test_size=0.5, random_state=84 #0.02
+    )
+
+print(tensor_x.shape)
+print(tensor_y.shape)
+my_dataloader = DataLoader(dataset_train,batch_size=batch_size) # create your dataloader
+my_dataloader_val = DataLoader(dataset_validate,batch_size=batch_size) 
+my_dataloader_test = DataLoader(my_dataset_test,batch_size=batch_size) 
+
+
+
+# for i, (images, labels) in enumerate(my_dataloader):
+#   print(images.shape)
+#   print(labels)
+
+
+class SUBNET(nn.Module):
+    def __init__(self):
+      super(SUBNET, self).__init__()
+      self.dropout1 = nn.Dropout2d(0.25)
+      self.dropout2 = nn.Dropout2d(0.5)
+      self.fc1 = nn.Linear(300*2049, 300*2049)
+      self.fc2 = nn.Linear(300*1025*129, 300*129*129)
+
+    # x represents our data
+    def forward(self, x):
+      # Pass data through conv1
+      x = self.dropout1(x)
+      # Flatten x with start_dim=1
+      x = torch.flatten(x, 1)
+      # Pass data through fc1
+      x = self.fc1(x)
+      x = nn.relu(x)
+      x = self.dropout2(x)
+      x = self.fc2(x)
+
+      # Apply softmax to x
+      output = x.reshape(300,128*128)
+      return output
+
+
+
+
+#Fully connected neural network with one hidden layer
+class RNN(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes):
+        super(RNN, self).__init__()
+        self.num_layers = num_layers
+        self.hidden_size = hidden_size
+        #self.rnn = nn.RNN(input_size, hidden_size, num_layers, batch_first=True)
+        # -> x needs to be: (batch_size, seq, input_size)
+
+        # or:
+        #self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc_enc = SUBNET()
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, num_classes)
+
+    def forward(self, x):
+        # Set initial hidden states (and cell states for LSTM)
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+
+        # x: (n, 28, 28), h0: (2, n, 128)
+
+        # Forward propagate RNN
+        #out, _ = self.rnn(x, h0)
+        # or:
+        # x = self.fc_enc(x)
+        out, _ = self.lstm(x, (h0,c0))
+
+        # out: tensor of shape (batch_size, seq_length, hidden_size)
+        # out: (n, 28, 128)
+
+        # Decode the hidden state of the last time step
+        out = out[:, -1, :]
+        # out: (n, 128)
+
+        out = self.fc(out)
+        # out: (n, 10)
+        return torch.sigmoid(out)
+
+model = RNN(input_size, hidden_size, num_layers, num_classes).to(device)
+
+# Loss and optimizer
+criterion = nn.BCELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+# Train the model
+n_total_steps = len(my_dataloader)
+best_val_acc = 0
+for epoch in range(num_epochs):
+    correct = 0
+    num_samples = 0
+    model.train()
+    for i, (images, labels) in enumerate(my_dataloader):
+        # origin shape: [N, 1, 28, 28]
+        # resized: [N, 300, 2048][N,300,128]
+        
+        images = images.reshape(-1, sequence_length, input_size).to(device)
+        # print(images.shape)
+        labels = labels.to(device)
+        num_samples+=labels.size(0)
+        # Forward pass
+        outputs = model(images)
+        # print(f'outputs.shape:{outputs.shape}')
+        # print(labels.shape)
+        # outputs = outputs.squeeze()
+        loss = criterion(outputs, labels.unsqueeze(1))
+
+        # Backward and optimize
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        predicted = (outputs > 0.5).long()
+        # print(f'predicted.shape:{predicted.shape}')
+        # print(f'labels.shape:{labels.shape}')
+        # print(f'correct_pre:{correct}')
+        correct += (predicted.squeeze()== labels).sum().item()
+        # print(f'predicted:{predicted}')
+        # print(f'correct:{correct}')
+        # print(f'labels.size:{labels.size(0)}')
+        # if (i+1) % 1 == 0:
+        #     print (f'Epoch [{epoch+1}/{num_epochs}], Step [{i+1}/{n_total_steps}], Loss: {loss.item():.4f}')
+        # print(f'correct:{correct}')
+    # print(f'tensor_y.size(0):{tensor_y.size(0)}')
+    print('[%d/%d] loss: %.3f, accuracy: %.3f' %
+          (i , epoch, loss.item(), 100 * correct /num_samples))
+    writer.add_scalars('Loss',{'train':loss.item()},epoch)
+    writer.add_scalars('Accuracy', {'train': 100 * correct /num_samples},epoch)
+        
+    # Test the model
+    # In test phase, we don't need to compute gradients (for memory efficiency)
+    num_samples_val = 0
+    model.eval()
+    with torch.no_grad():
+        correct_val = 0
+        for i, (images, labels) in enumerate(my_dataloader_val):
+            images = images.reshape(-1, sequence_length, input_size).to(device)
+            labels = labels.to(device)
+            num_samples_val+=labels.size(0)
+            outputs = model(images)
+            predicted = (outputs > 0.5).long()
+            correct_val += (predicted.squeeze()== labels).sum().item()
+
+        val_acc = 100 * correct_val / num_samples_val
+        print(f'Accuracy of the network on the validation: {val_acc} %')
+        writer.add_scalars('Accuracy', {'val': val_acc},epoch)
+    if(val_acc> best_val_acc):
+        best_val_acc = val_acc
+        torch.save(model.state_dict(),'./best_model'+'.ckpt')                         
+        print("best model with val acc "+ str(best_val_acc)+ "is saved")
+model.eval()
+model.load_state_dict(torch.load('/content/best_model.ckpt'))   
+with torch.no_grad():
+        correct_val = 0
+        num_samples_val = 0
+        for i, (images, labels) in enumerate(my_dataloader_test):
+            images = images.reshape(-1, sequence_length, input_size).to(device)
+            labels = labels.to(device)
+            num_samples_val+=labels.size(0)
+            outputs = model(images)
+            predicted = (outputs > 0.5).long()
+            correct_val += (predicted.squeeze()== labels).sum().item()
+
+        val_acc = 100 * correct_val / num_samples_val
+        print(f'Accuracy of the network on the test: {val_acc} %')

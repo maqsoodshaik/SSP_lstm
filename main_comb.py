@@ -310,6 +310,7 @@ for epoch in range(num_epochs):
         torch.save(model.state_dict(),'./best_model'+'.ckpt')                         
         print("best model with val acc "+ str(best_val_acc)+ "is saved")
 model.eval()
+model_fc.eval()
 model.load_state_dict(torch.load('./best_model.ckpt'))   
 with torch.no_grad():
         correct_val = 0

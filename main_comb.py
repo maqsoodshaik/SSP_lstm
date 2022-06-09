@@ -272,6 +272,8 @@ for epoch in range(num_epochs):
     # In test phase, we don't need to compute gradients (for memory efficiency)
     num_samples_val = 0
     model.eval()
+    model_fc.eval()
+    model_trans.eval()
     with torch.no_grad():
         correct_val = 0
         for i, (dataset1, dataset2) in enumerate(my_dataloader_val):
@@ -314,6 +316,8 @@ for epoch in range(num_epochs):
         torch.save(model.state_dict(),'./best_model'+'.ckpt')                         
         print("best model with val acc "+ str(best_val_acc)+ "is saved")
 model.eval()
+model_fc.eval()
+model_trans.eval()
 model.load_state_dict(torch.load('./best_model.ckpt'))   
 with torch.no_grad():
         correct_val = 0

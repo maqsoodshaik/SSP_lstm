@@ -11,6 +11,35 @@ from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import train_test_split
 import math
 s = nn.Softmax()
+class PositionalEncoding(nn.Module):
+
+    def __init__(self, d_model, max_len=600):
+        """
+        Inputs
+            d_model - Hidden dimensionality of the input.
+            max_len - Maximum length of a sequence to expect.
+        """
+        super().__init__()
+
+        # Create matrix of [SeqLen, HiddenDim] representing the positional encoding for max_len inputs
+        pe = torch.zeros(max_len, d_model-2)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model-2, 2).float() * (-math.log(10000.0) / (d_model-2)))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.mask = torch.cat((torch.zeros(300,1),torch.ones(300,1))).unsqueeze(0)
+        self.start = torch.zeros(600,1).unsqueeze(0)
+        self.mask = torch.cat((self.start,self.mask),2)
+        pe = torch.cat((pe,self.mask),2)
+        # register_buffer => Tensor which is not a parameter, but should be part of the modules state.
+        # Used for tensors that need to be on the same device as the module.
+        # persistent=False tells PyTorch to not add the buffer to the state dict (e.g. when we save the model)
+        self.register_buffer('pe', pe, persistent=False)
+
+    def forward(self, x):
+        x = x + self.pe[:, :x.size(1)]
+        return x
 def scaled_dot_product(q, k, v, mask=None):
     d_k = q.size()[-1]
    
@@ -66,7 +95,7 @@ class MultiheadAttention(nn.Module):
             return o
 class EncoderBlock(nn.Module):
 
-    def __init__(self, input_dim, num_heads, dim_feedforward, dropout=0.0):
+    def __init__(self, input_dim, num_heads, dim_feedforward, dropout=0.0, sequence_length = 300):
         """
         Inputs:
             input_dim - Dimensionality of the input
@@ -75,6 +104,7 @@ class EncoderBlock(nn.Module):
             dropout - Dropout probability to use in the dropout layers
         """
         super().__init__()
+
         self.input_dim = input_dim
         # Attention layer
         self.self_attn = MultiheadAttention(input_dim, input_dim, num_heads)
@@ -107,13 +137,17 @@ class TransformerEncoder(nn.Module):
 
     def __init__(self, num_layers, **block_args):
         super().__init__()
+        self.input_dim = block_args["input_dim"]
+        self.sequence_length = block_args["sequence_length"]
+        self.positional_encoding = PositionalEncoding(d_model=block_args["input_dim"])
         self.layers = nn.ModuleList([EncoderBlock(**block_args) for _ in range(num_layers)])
-        self.fc = nn.Linear(block_args["input_dim"], 1)
+        self.fc = nn.Linear(block_args["input_dim"]*block_args["sequence_length"]*2, 1)
     def forward(self, x, mask=None):
+        x = self.positional_encoding(x)
         for l in self.layers:
             x = l(x, mask=mask)
         
-        return x,torch.sigmoid(self.fc(x))
+        return x,torch.sigmoid(self.fc(x.reshape(-1,self.input_dim* self.sequence_length*2)))
 
     def get_attention_maps(self, x, mask=None):
         attention_maps = []
@@ -123,7 +157,7 @@ class TransformerEncoder(nn.Module):
             x = l(x)
         return attention_maps
 
-SEQ_LEN = 5
+SEQ_LEN = 300
 VOCAB_SIZE = 6
 NUM_TRAINING_STEPS = 25000
 BATCH_SIZE = 64
@@ -152,17 +186,17 @@ def get_data_sample(batch_size=1):
 
 # # Instantiate the network, loss function, and optimizer
 # # inputs, labels = get_data_sample(BATCH_SIZE)
-# net = TransformerEncoder(num_layers = 1,input_dim =SEQ_LEN+2,num_heads =1, dim_feedforward = 20)
+# net = TransformerEncoder(num_layers = 3,input_dim =128,num_heads =4, dim_feedforward = 20)
 # criterion = nn.CrossEntropyLoss()
 # optimizer = torch.optim.SGD(net.parameters(), lr=0.005, momentum=0.9)
 # # Train the network
 # num = 0
 # for i in range(NUM_TRAINING_STEPS):
     
-#     inputs = torch.randint(low=0, high=VOCAB_SIZE - 1,size=[BATCH_SIZE, SEQ_LEN,SEQ_LEN + 2],dtype=torch.float)
+#     inputs = torch.randint(low=0, high=VOCAB_SIZE - 1,size=[BATCH_SIZE, 600,128],dtype=torch.float)
 #     labels = torch.randint(low=0, high=1,size=[BATCH_SIZE, 1])
 #     optimizer.zero_grad()
-#     outputs = net(inputs)
+#     _,outputs = net(inputs)
 #     loss = criterion(outputs, labels)
 #     loss.backward()
 #     optimizer.step()

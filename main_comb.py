@@ -17,7 +17,7 @@ writer = SummaryWriter()
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+# device = "mps"
 # Hyper-parameters
 # input_size = 784 # 28x28
 num_classes = 1
@@ -25,7 +25,7 @@ num_epochs = 2
 batch_size = 2
 learning_rate = 0.0001
 loss_hyp = 0.3
-input_size = 256
+input_size = 128
 sequence_length = 300
 hidden_size = 2000
 num_layers = 3
@@ -198,12 +198,13 @@ class RNN(nn.Module):
         # out: (n, 10)
         return torch.sigmoid(out)
 
-model = RNN(input_size, hidden_size, num_layers, num_classes).to(device)
-model_trans = fusion.TransformerEncoder(num_layers = 4,input_dim =128,num_heads =4, dim_feedforward = 256)
+# model = RNN(input_size, hidden_size, num_layers, num_classes).to(device)
+model_trans = fusion.TransformerEncoder(num_layers = 4,input_dim =128,num_heads =4, dim_feedforward = 256,sequence_length = sequence_length)
 model_fc = SUBNET(num_classes).to(device)
 # Loss and optimizer
 criterion = nn.BCELoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+# optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+optimizer_fc = torch.optim.Adam(model_fc.parameters(), lr=learning_rate)
 criterion_fc = nn.BCELoss()
 criterion_trans = nn.BCELoss()
 # optimizer_fc = torch.optim.Adam(model_fc.parameters(), lr=learning_rate)
@@ -212,7 +213,7 @@ best_val_acc = 0
 for epoch in range(num_epochs):
     correct = 0
     num_samples = 0
-    model.train()
+    # model.train()
     model_fc.train()
     model_trans.train()
     for i, (dataset1, dataset2) in enumerate(my_dataloader):
@@ -231,32 +232,32 @@ for epoch in range(num_epochs):
             images_o,outputs_fc_s = model_fc(data1[k])
             loss_fc += criterion_fc(outputs_fc_s, labels[k].reshape(1,1).expand(sequence_length, 1))
             audio_i=data2[k]
-            audio_i = audio_i.unsqueeze(1)
+            # audio_i = audio_i.unsqueeze(1)
             images_i=images_o 
-            images_i = images_i.unsqueeze(1)
-            aggreg = torch.cat((audio_i,images_i),1)
-            out,out_s = model_trans(aggreg)
-            out = out.reshape(sequence_length,input_size)
-            out_s = out_s.reshape(sequence_length,2)
-            loss_trans += criterion_fc(out_s, labels[k].reshape(1,1).expand(sequence_length, 2))
-            images = torch.cat((images,out))
+            # images_i = images_i.unsqueeze(1)
+            aggreg = torch.cat((audio_i,images_i),0)
+            # out,out_s = model_trans(aggreg)
+            # out = out.reshape(sequence_length,input_size)
+            # out_s = out_s.reshape(sequence_length,2)
+            # loss_trans += criterion_fc(out_s, labels[k].reshape(1,1).expand(sequence_length, 2))
+            images = torch.cat((images,aggreg))
 
         
-        images = images.reshape(-1, sequence_length, input_size).to(device)
+        images = images.reshape(-1, sequence_length*2, input_size).to(device)
         # print(images.shape)
         labels = labels.to(device)
         num_samples+=labels.size(0)
         # Forward pass
-        outputs = model(images)
+        _,outputs = model_trans(images)
         # print(f'outputs.shape:{outputs.shape}')
         # print(labels.shape)
         # outputs = outputs.squeeze()
         loss = criterion(outputs, labels.unsqueeze(1))
-        loss +=loss_hyp*(loss_fc+loss_trans)
+        loss +=loss_hyp*(loss_fc)
         # Backward and optimize
-        optimizer.zero_grad()
+        optimizer_fc.zero_grad()
         loss.backward()
-        optimizer.step()
+        optimizer_fc.step()
         predicted = (outputs > 0.5).long()
         # print(f'predicted.shape:{predicted.shape}')
         # print(f'labels.shape:{labels.shape}')
@@ -271,7 +272,7 @@ for epoch in range(num_epochs):
     # Test the model
     # In test phase, we don't need to compute gradients (for memory efficiency)
     num_samples_val = 0
-    model.eval()
+    # model_fc.eval()
     model_fc.eval()
     model_trans.eval()
     with torch.no_grad():
@@ -288,23 +289,23 @@ for epoch in range(num_epochs):
             loss_fc = 0
             for k in range(data1.size(0)):
                 images_o,outputs_fc_s = model_fc(data1[k])
-            
-                # loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
+                loss_fc += criterion_fc(outputs_fc_s, labels[k].reshape(1,1).expand(sequence_length, 1))
                 audio_i=data2[k]
-                audio_i = audio_i.unsqueeze(1)
+                # audio_i = audio_i.unsqueeze(1)
                 images_i=images_o 
-                images_i = images_i.unsqueeze(1)
-                aggreg = torch.cat((audio_i,images_i),1)
-                out,out_s = model_trans(aggreg)
-                out = out.reshape(sequence_length,input_size)
-                out_s = out_s.reshape(sequence_length,2)
+                # images_i = images_i.unsqueeze(1)
+                aggreg = torch.cat((audio_i,images_i),0)
+                # out,out_s = model_trans(aggreg)
+                # out = out.reshape(sequence_length,input_size)
+                # out_s = out_s.reshape(sequence_length,2)
                 # loss_trans += criterion_fc(out_s, labels[k].reshape(1,1).expand(sequence_length, 2))
-                images = torch.cat((images,out))
+                images = torch.cat((images,aggreg))
 
-            images = images.reshape(-1, sequence_length, input_size).to(device)
+            images = images.reshape(-1, sequence_length*2, input_size).to(device)
+            # print(images.shape)
             labels = labels.to(device)
             num_samples_val+=labels.size(0)
-            outputs = model(images)
+            _,outputs = model_trans(images)
             predicted = (outputs > 0.5).long()
             correct_val += (predicted.squeeze()== labels).sum().item()
 
@@ -313,12 +314,12 @@ for epoch in range(num_epochs):
         writer.add_scalars('Accuracy', {'val': val_acc},epoch)
     if(val_acc> best_val_acc):
         best_val_acc = val_acc
-        torch.save(model.state_dict(),'./best_model'+'.ckpt')                         
+        torch.save(model_trans.state_dict(),'./best_model'+'.ckpt')                         
         print("best model with val acc "+ str(best_val_acc)+ "is saved")
-model.eval()
+# model.eval()
 model_fc.eval()
 model_trans.eval()
-model.load_state_dict(torch.load('./best_model.ckpt'))   
+model_trans.load_state_dict(torch.load('./best_model.ckpt'))   
 with torch.no_grad():
         correct_val = 0
         num_samples_val = 0
@@ -334,22 +335,23 @@ with torch.no_grad():
             loss_fc = 0
             for k in range(data1.size(0)):
                 images_o,outputs_fc_s = model_fc(data1[k])
-            
+                loss_fc += criterion_fc(outputs_fc_s, labels[k].reshape(1,1).expand(sequence_length, 1))
                 audio_i=data2[k]
-                audio_i = audio_i.unsqueeze(1)
+                # audio_i = audio_i.unsqueeze(1)
                 images_i=images_o 
-                images_i = images_i.unsqueeze(1)
-                aggreg = torch.cat((audio_i,images_i),1)
-                out,out_s = model_trans(aggreg)
-                out = out.reshape(sequence_length,input_size)
-                out_s = out_s.reshape(sequence_length,2)
+                # images_i = images_i.unsqueeze(1)
+                aggreg = torch.cat((audio_i,images_i),0)
+                # out,out_s = model_trans(aggreg)
+                # out = out.reshape(sequence_length,input_size)
+                # out_s = out_s.reshape(sequence_length,2)
                 # loss_trans += criterion_fc(out_s, labels[k].reshape(1,1).expand(sequence_length, 2))
-                images = torch.cat((images,out))
+                images = torch.cat((images,aggreg))
 
-            images = images.reshape(-1, sequence_length, input_size).to(device)
+            images = images.reshape(-1, sequence_length*2, input_size).to(device)
+            # print(images.shape)
             labels = labels.to(device)
             num_samples_val+=labels.size(0)
-            outputs = model(images)
+            _,outputs = model_trans(images)
             predicted = (outputs > 0.5).long()
             correct_val += (predicted.squeeze()== labels).sum().item()
 

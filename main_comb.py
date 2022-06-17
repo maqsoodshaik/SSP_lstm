@@ -16,19 +16,20 @@ torch.manual_seed(seed)
 writer = SummaryWriter()
 
 # Device configuration
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('mps')
 # Hyper-parameters
 # input_size = 784 # 28x28
 num_classes = 1
-num_epochs = 2
-batch_size = 2
+num_epochs = 50
+batch_size = 64
 learning_rate = 0.0001
 loss_hyp = 0.3
 input_size = 256
 sequence_length = 300
 hidden_size = 2000
 num_layers = 3
+loss_hyp=0.3
 
 
 # test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
@@ -51,25 +52,26 @@ with open("bc_detection_val.csv", 'r') as file:
 print(header)
 print(rows_test[:][0])
 #reading input data
-path = os.getcwd() + '/' + 'resnet50'
-dir_list = os.listdir(path)
-os.chdir(path)
+path = os.getcwd() + '/' + 'video_features/'
+path1= os.getcwd() + '/' + 'video_features/'
+# dir_list = os.listdir(path)
+# os.chdir(path)
 
 
 
-print(os.getcwd())
+# print(os.getcwd())
 # combined_data = np.array([np.load(fname) for fname in dir_list])
-combined_data_video = np.array([np.load(fname[0]+'_video.npy') for fname in rows])
-print(os.getcwd())
-combined_data_audio = np.array([np.load(fname[0]+'_audio.npy') for fname in rows])
+combined_data_video = np.array([np.load(path+fname[0]+'_video.npy') for fname in rows])
+# print(os.getcwd())
+combined_data_audio = np.array([np.load(path1+fname[0]+'_audio_vggish.npy') for fname in rows])
 labels = np.array([np.array(fname[1], dtype=np.float16) for fname in rows])
 
 
 
-combined_data_test_video = np.array([np.load(fname[0]+'_video.npy') for fname in rows_test])
-combined_data_test_audio = np.array([np.load(fname[0]+'_audio.npy') for fname in rows_test])
+combined_data_test_video = np.array([np.load(path+fname[0]+'_video.npy') for fname in rows_test])
+combined_data_test_audio = np.array([np.load(path1+fname[0]+'_audio_vggish.npy') for fname in rows_test])
 labels_test = np.array([np.array(fname[1], dtype=np.float16) for fname in rows_test])
-os.chdir(org_path)
+# os.chdir(org_path)
 tensor_x_video = torch.Tensor(combined_data_video) # transform to torch tensor
 tensor_x_audio = torch.Tensor(combined_data_audio) # transform to torch tensor
 
@@ -90,10 +92,10 @@ tensor_y = torch.Tensor(labels.astype(np.float64))
 my_dataset_video = TensorDataset(tensor_x_video,tensor_y)
 my_dataset_audio = TensorDataset(tensor_x_audio,tensor_y)
 dataset_train_video, dataset_validate_video = train_test_split(
-        my_dataset_video, test_size=0.5, random_state=84 #0.02
+        my_dataset_video, test_size=0.02, random_state=84 #0.02
     )
 dataset_train_audio, dataset_validate_audio = train_test_split(
-        my_dataset_audio, test_size=0.5, random_state=84 #0.02
+        my_dataset_audio, test_size=0.02, random_state=84 #0.02
     )
 
 #---------------------
@@ -214,7 +216,6 @@ for epoch in range(num_epochs):
     num_samples = 0
     model.train()
     model_fc.train()
-    model_trans.train()
     for i, (dataset1, dataset2) in enumerate(my_dataloader):
         # origin shape: [N, 1, 28, 28]
         # resized: [N, 300, 2048][N,300,128]
@@ -223,25 +224,23 @@ for epoch in range(num_epochs):
         data2 = dataset2[0].to(device)
         label2 = dataset2[1].to(device)
          # Forward pass
-        images_i = torch.as_tensor([])
-        images = torch.as_tensor([])
+        images = torch.as_tensor([]).to(device)
         loss_fc = 0
         loss_trans = 0
         for k in range(data1.size(0)):
             images_o,outputs_fc_s = model_fc(data1[k])
+            images = torch.cat((images,images_o))
             loss_fc += criterion_fc(outputs_fc_s, labels[k].reshape(1,1).expand(sequence_length, 1))
-            audio_i=data2[k]
-            audio_i = audio_i.unsqueeze(1)
-            images_i=images_o 
-            images_i = images_i.unsqueeze(1)
-            aggreg = torch.cat((audio_i,images_i),1)
-            out,out_s = model_trans(aggreg)
-            out = out.reshape(sequence_length,input_size)
-            out_s = out_s.reshape(sequence_length,2)
-            loss_trans += criterion_fc(out_s, labels[k].reshape(1,1).expand(sequence_length, 2))
-            images = torch.cat((images,out))
-
+            # Backward and optimize
+            # optimizer_fc.zero_grad()
+            # loss_fc.backward()
+            # optimizer_fc.step()
+        # print(f'outputs.shape:{outputs.shape}')
+        # print(labels.shape)
+        # outputs = outputs.squeeze()
         
+
+        loss_fc = loss_fc/data1.size(0)
         images = images.reshape(-1, sequence_length, input_size).to(device)
         # print(images.shape)
         labels = labels.to(device)
@@ -252,7 +251,7 @@ for epoch in range(num_epochs):
         # print(labels.shape)
         # outputs = outputs.squeeze()
         loss = criterion(outputs, labels.unsqueeze(1))
-        loss +=loss_hyp*(loss_fc+loss_trans)
+        loss +=loss_hyp*loss_fc
         # Backward and optimize
         optimizer.zero_grad()
         loss.backward()
@@ -284,23 +283,13 @@ for epoch in range(num_epochs):
             data2 = dataset2[0].to(device)
             label2 = dataset2[1].to(device)
             # Forward pass
-            images = torch.as_tensor([])
+            images = torch.as_tensor([]).to(device)
             loss_fc = 0
             for k in range(data1.size(0)):
                 images_o,outputs_fc_s = model_fc(data1[k])
             
                 # loss_fc += criterion_fc(outputs_fc_s, labels.unsqueeze(1).expand(sequence_length, 1))
-                audio_i=data2[k]
-                audio_i = audio_i.unsqueeze(1)
-                images_i=images_o 
-                images_i = images_i.unsqueeze(1)
-                aggreg = torch.cat((audio_i,images_i),1)
-                out,out_s = model_trans(aggreg)
-                out = out.reshape(sequence_length,input_size)
-                out_s = out_s.reshape(sequence_length,2)
-                # loss_trans += criterion_fc(out_s, labels[k].reshape(1,1).expand(sequence_length, 2))
-                images = torch.cat((images,out))
-
+            loss_fc = loss_fc/data1.size(0)
             images = images.reshape(-1, sequence_length, input_size).to(device)
             labels = labels.to(device)
             num_samples_val+=labels.size(0)
@@ -317,7 +306,6 @@ for epoch in range(num_epochs):
         print("best model with val acc "+ str(best_val_acc)+ "is saved")
 model.eval()
 model_fc.eval()
-model_trans.eval()
 model.load_state_dict(torch.load('./best_model.ckpt'))   
 with torch.no_grad():
         correct_val = 0
@@ -330,7 +318,7 @@ with torch.no_grad():
             data2 = dataset2[0].to(device)
             label2 = dataset2[1].to(device)
             # Forward pass
-            images = torch.as_tensor([])
+            images = torch.as_tensor([]).to(device)
             loss_fc = 0
             for k in range(data1.size(0)):
                 images_o,outputs_fc_s = model_fc(data1[k])
